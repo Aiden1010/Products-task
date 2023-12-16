@@ -14,39 +14,47 @@ export default function Products() {
 
   useEffect(() => {
     retrieveCategories();
-    const products = JSON.parse(sessionStorage.getItem("products")) || [];
-    setCartCount(products.length);
+    const storedProducts = JSON.parse(sessionStorage.getItem("products")) || [];
+    setCartCount(storedProducts.length);
   }, []);
 
-  useEffect(() => {
-    retrieveProducts(order);
-  }, [order]);
-
-  const retrieveProducts = (order) => {
-    apiRequest(`${baseUrl}?sort=${order}`);
-  };
-
   const retrieveCategories = () => {
-    var url = `${baseUrl}/categories`;
-    apiRequest(url);
+    apiRequest(`${baseUrl}/categories`, handleCategoriesData);
   };
 
-  const apiRequest = async (url) => {
-    await fetch(url)
-      .then((response) => {
-        return response.json();
-      })
-      .then((data) => {
-        console.log(data);
-        if (url.includes("categories")) {
-          setCategoriesList(data);
-        } else {
-          setProductsList(data);
-        }
-      })
-      .catch((err) => {
-        console.log(err);
-      });
+  useEffect(() => {
+    retrieveProducts(order, category);
+  }, [order, category]);
+
+  const retrieveProducts = (order, category) => {
+    var url = baseUrl;
+    if (category) url = `${url}/category/${category}`;
+    apiRequest(`${url}?sort=${order}`, handleProductsData);
+  };
+
+  const apiRequest = async (url, callback) => {
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+      callback(data);
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const handleCategoriesData = (data) => setCategoriesList(data);
+
+  const handleProductsData = (data) => {
+    const storedProducts = JSON.parse(sessionStorage.getItem("products")) || [];
+    const updatedStoredProducts = data.map((product) => {
+      const productMatch = storedProducts.find(
+        (storedProduct) => storedProduct.id === product.id
+      );
+      return productMatch
+        ? { ...product, qty: productMatch.qty }
+        : { ...product, qty: 0 };
+    });
+    setProductsList(updatedStoredProducts);
   };
 
   const handleOrderChange = (e) => {
@@ -54,24 +62,46 @@ export default function Products() {
   };
 
   const hanldleChangeCatgory = (e) => {
-    const { value } = e.target;
-    setCategory(value);
-    var url = baseUrl;
-    if (value) {
-      url = `${baseUrl}/category/${value}`;
-    }
-    apiRequest(url);
+    setCategory(e.target.value);
+  };
+
+  const handleQuantityChange = (product, value) => {
+    const updatedProducts = productsList.map((p) => {
+      if (p.id === product.id) {
+        return {
+          ...p,
+          qty: value === "increment" ? p.qty + 1 : Math.max(p.qty - 1, 0),
+        };
+      }
+      return p;
+    });
+    setProductsList(updatedProducts);
+    updateCartItems(updatedProducts);
   };
 
   const handleAddtoCart = (product) => {
+    const updatedProducts = productsList.map((p) =>
+      p.id === product.id ? { ...p, qty: p.qty + 1 } : p
+    );
+    setProductsList(updatedProducts);
+
     const existingProducts =
       JSON.parse(sessionStorage.getItem("products")) || [];
     const existingProduct = existingProducts.find((p) => p.id === product.id);
 
-    if (!existingProduct) existingProducts.push({ ...product });
+    if (!existingProduct) {
+      existingProducts.push({ ...product, qty: 1 });
+    } else {
+      existingProduct.qty += 1;
+    }
 
-    setCartCount(existingProducts.length);
-    sessionStorage.setItem("products", JSON.stringify(existingProducts));
+    updateCartItems(existingProducts);
+  };
+
+  const updateCartItems = (updatedProducts) => {
+    const updatedSessionProducts = updatedProducts.filter((p) => p.qty > 0);
+    setCartCount(updatedSessionProducts.length);
+    sessionStorage.setItem("products", JSON.stringify(updatedSessionProducts));
   };
 
   return (
@@ -101,6 +131,7 @@ export default function Products() {
           <Product
             key={index}
             product={product}
+            handleQuantityChange={handleQuantityChange}
             handleAddtoCart={handleAddtoCart}
           />
         ))}
